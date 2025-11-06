@@ -1,0 +1,121 @@
+const std = @import("std");
+const builtin = @import("builtin");
+
+const heap = @import("heap.zig");
+const Main = @import("../main.zig");
+const ZonElement = @import("zon.zig").ZonElement;
+const NeverFailingAllocator = heap.NeverFailingAllocator;
+
+pub fn openDirInWindow(path: []const u8) void {
+	const newPath = Main.stackAllocator.dupe(u8, path);
+	defer Main.stackAllocator.free(newPath);
+
+	if(builtin.os.tag == .windows) {
+		std.mem.replaceScalar(u8, newPath, '/', '\\');
+	}
+
+	const command = switch(builtin.os.tag) {
+		.windows => .{"explorer", newPath},
+		.macos => .{"open", newPath},
+		else => .{"xdg-open", newPath},
+	};
+	const result = std.process.Child.run(.{
+		.allocator = Main.stackAllocator.allocator,
+		.argv = &command,
+	}) catch |err| {
+		std.log.err("Got error while trying to open file explorer: {s}", .{@errorName(err)});
+		return;
+	};
+	defer {
+		Main.stackAllocator.free(result.stderr);
+		Main.stackAllocator.free(result.stdout);
+	}
+	if(result.stderr.len != 0) {
+		std.log.err("Got error while trying to open file explorer: {s}", .{result.stderr});
+	}
+}
+
+pub fn cwd() Dir {
+	return Dir{
+		.dir = std.fs.cwd(),
+	};
+}
+
+
+pub const Dir = struct {
+	dir: std.fs.Dir,
+
+	pub fn init(dir: std.fs.Dir) Dir {
+		return .{.dir = dir};
+	}
+
+	pub fn close(self: *Dir) void {
+		self.dir.close();
+	}
+
+	pub fn read(self: Dir, allocator: NeverFailingAllocator, path: []const u8) ![]u8 {
+		return self.dir.readFileAlloc(allocator.allocator, path, std.math.maxInt(usize));
+	}
+
+	pub fn readToZon(self: Dir, allocator: NeverFailingAllocator, path: []const u8) !ZonElement {
+		const string = try self.read(Main.stackAllocator, path);
+		defer Main.stackAllocator.free(string);
+		const realPath: ?[]const u8 = self.dir.realpathAlloc(Main.stackAllocator.allocator, path) catch null;
+		defer if(realPath) |p| Main.stackAllocator.free(p);
+		return ZonElement.parseFromString(allocator, realPath orelse path, string);
+	}
+
+	pub fn write(self: Dir, path: []const u8, data: []const u8) !void {
+		return self.dir.writeFile(.{.data = data, .sub_path = path});
+	}
+
+	pub fn writeZon(self: Dir, path: []const u8, zon: ZonElement) !void {
+		const string = zon.toString(Main.stackAllocator);
+		defer Main.stackAllocator.free(string);
+		try self.write(path, string);
+	}
+
+	pub fn hasFile(self: Dir, path: []const u8) bool {
+		const file = self.dir.openFile(path, .{}) catch return false;
+		file.close();
+		return true;
+	}
+
+	pub fn hasDir(self: Dir, path: []const u8) bool {
+		var dir = self.dir.openDir(path, .{.iterate = false}) catch return false;
+		dir.close();
+		return true;
+	}
+
+	pub fn openDir(self: Dir, path: []const u8) !Dir {
+		return .{.dir = try self.dir.makeOpenPath(path, .{})};
+	}
+
+	pub fn openIterableDir(self: Dir, path: []const u8) !Dir {
+		return .{.dir = try self.dir.makeOpenPath(path, .{.iterate = true})};
+	}
+
+	pub fn openFile(self: Dir, path: []const u8) !std.fs.File {
+		return self.dir.openFile(path, .{});
+	}
+
+	pub fn deleteTree(self: Dir, path: []const u8) !void {
+		try self.dir.deleteTree(path);
+	}
+
+	pub fn deleteFile(self: Dir, path: []const u8) !void {
+		try self.dir.deleteFile(path);
+	}
+
+	pub fn makePath(self: Dir, path: []const u8) !void {
+		try self.dir.makePath(path);
+	}
+
+	pub fn walk(self: Dir, allocator: NeverFailingAllocator) std.fs.Dir.Walker {
+		return self.dir.walk(allocator.allocator) catch unreachable;
+	}
+
+	pub fn iterate(self: Dir) std.fs.Dir.Iterator {
+		return self.dir.iterate();
+	}
+};
