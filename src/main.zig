@@ -10,6 +10,10 @@ const blocks = @import("utils/blocks.zig");
 const Block = @import("utils/blocks.zig").Block;
 const MCLoader = @import("mc/main.zig");
 
+const c = @cImport({
+    @cInclude("zlib.h");
+});
+
 pub threadlocal var stackAllocator: heap.NeverFailingAllocator = undefined;
 threadlocal var stackAllocatorBase: heap.StackAllocator = undefined;
 pub const globalAllocator: heap.NeverFailingAllocator = heap.allocators.handledGpa.allocator();
@@ -111,9 +115,14 @@ pub fn main() !void {
     defer heap.GarbageCollection.syncPoint();
     //defer heap.GarbageCollection.debug();
 
-    MCLoader.testMCloader();
+
+    const srcLength :c_ulong = 50;
+    _ = c.compressBound(srcLength);
+
     if(true)
         return;
+
+    MCLoader.testMCloader();
     
 
     //files.openDirInWindow("src");
