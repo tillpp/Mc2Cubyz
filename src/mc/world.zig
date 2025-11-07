@@ -2,6 +2,7 @@ const std = @import("std");
 const files = @import("../utils/files.zig");
 const utils = @import("../utils/utils.zig");
 const main = @import("../main.zig");
+const NBT = @import("NBT.zig").NBT;
 const c = @cImport({
     @cInclude("zlib.h");
 });
@@ -68,24 +69,37 @@ pub const World = struct{
         std.debug.print("compressType {d}\n", .{compressType});
         std.debug.print("{d}\n", .{payload.len});
 
+        std.debug.assert(compressType == 2); //Zlib
+        //std.debug.assert(compressType == 128+2); //Zlib but c.x.z.mcc file has the information.
+
         const srcLength :c_ulong = payload.len;
-        const destLength:c_ulong = c.compressBound(srcLength);
+        var destLength:c_ulong = c.compressBound(srcLength)*100;
         const dest = main.stackAllocator.alloc(u8, destLength);
         defer main.stackAllocator.free(dest);
-        std.debug.print("until here\n", .{});
+        
         // inflate
-        // zlib struct
-        var infstream = c.z_stream{
-            .avail_in = @as(c_uint,@truncate(srcLength)), // size of input
-            .next_in = payload.ptr, // input char array
-            .avail_out = @as(c_uint,@truncate(destLength)), // size of output
-            .next_out = dest.ptr // output char array
-        };
+        const ret = c.uncompress(dest.ptr, &destLength, payload.ptr, srcLength);
+        
+        std.debug.print("ret {d}", .{ret});
+        // // zlib struct
+        // var infstream = c.z_stream{
+        //     .avail_in = @as(c_uint,@truncate(srcLength)), // size of input
+        //     .next_in = payload.ptr, // input char array
+        //     .avail_out = @as(c_uint,@truncate(destLength)), // size of output
+        //     .next_out = dest.ptr // output char array
+        // };
+        // _ = c.inflateInit(&infstream);
+        // const ret = c.inflate(&infstream, c.Z_NO_FLUSH);
+        
+        // _ = c.inflateEnd(&infstream);
 
-        _ = c.inflateInit(&infstream);
-        _ = c.inflate(&infstream, c.Z_NO_FLUSH);
-        _ = c.inflateEnd(&infstream);
+        // std.debug.print("{d}x\n", .{ret});
 
+        _ = try files.cwd().write("/home/uni/programming/Mc2Cubyz/chunk.txt",dest);
+        
+        var nbt = try NBT.init(dest);
+        nbt.print("");
+        defer nbt.deinit();
         //std.debug.print("", .{});
         //_ = c.compress(dest.ptr, &destLength, payload.ptr, srcLength);
 

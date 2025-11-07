@@ -116,14 +116,11 @@ pub fn main() !void {
     //defer heap.GarbageCollection.debug();
 
 
-    const srcLength :c_ulong = 50;
-    _ = c.compressBound(srcLength);
-
+    MCLoader.testMCloader();
+    
     if(true)
         return;
 
-    MCLoader.testMCloader();
-    
 
     //files.openDirInWindow("src");
     const palette = try files.cwd().readToZon(stackAllocator, "/home/uni/.cubyz/saves/Save3/palette.zig.zon");
